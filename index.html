@@ -158,7 +158,13 @@ const lampAudios = [
   new Audio('sounds/work hard.mp3')
 ];
 
+lampAudios.forEach(a => {
+  a.preload = "auto";
+  a.load();
+});
+
 let shuffledQueue = [];
+
 // face identifiers
 const FACE_DEFAULT = 0;
 const FACE_GENTLE  = 1;
@@ -169,6 +175,27 @@ const faces = [FACE_DEFAULT, FACE_GENTLE, FACE_KISSY, FACE_HAPPY];
 
 let currentFace = FACE_DEFAULT;
 let faceQueue = [];
+
+let audioUnlocked = false;
+
+async function unlockAudio() {
+  if (audioUnlocked) return;
+
+  try {
+    // play & immediately pause all sounds once
+    for (const a of lampAudios) {
+      a.volume = 0;
+      await a.play().catch(() => {});
+      a.pause();
+      a.currentTime = 0;
+      a.volume = 1;
+    }
+
+    audioUnlocked = true;
+  } catch (e) {
+    console.log("Audio unlock failed", e);
+  }
+}
 
 // ── sizing ──────────────────────────────────────────────────────────
 const W = 420, H = 620;
@@ -860,15 +887,22 @@ function shuffle(array) {
 
 function playRandomLampAudio() {
   if (shuffledQueue.length === 0) {
-    shuffledQueue = shuffle(
-      [...Array(lampAudios.length).keys()]
-    );
+    shuffledQueue = shuffle([...Array(lampAudios.length).keys()]);
   }
 
   const index = shuffledQueue.pop();
+  const audio = lampAudios[index];
 
-  lampAudios[index].currentTime = 0;
-  lampAudios[index].play();
+  audio.pause();
+  audio.currentTime = 0;
+
+  const playPromise = audio.play();
+
+  if (playPromise !== undefined) {
+    playPromise.catch(err => {
+      console.log("Audio play blocked:", err);
+    });
+  }
 }
 
 // ── toggle ──────────────────────────────────────────────────────────────
@@ -902,6 +936,7 @@ function isNearBead(x, y) {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  unlockAudio();
   const x = getX(e), y = getY(e);
 
   if (Math.hypot(x - beadX, y - beadY) < 26) {
@@ -1018,6 +1053,7 @@ function loop(ts) {
 const introModal = document.getElementById('introModal');
 const modalNext = document.getElementById('modalNext');
 modalNext.addEventListener('click', async () => {
+  await unlockAudio();
   introModal.style.display = 'none';
   hint.style.opacity = '1';
   try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch(e){}
