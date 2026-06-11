@@ -52,8 +52,8 @@ ctx.scale(devicePixelRatio, devicePixelRatio);
 
 // ── lamp geometry (all in logical px) ────────────────────────────────
 const CX = W / 2;
-const SHADE_TOP_Y   = 160,  SHADE_TOP_W  = 106;
-const SHADE_BOT_Y   = 290,  SHADE_BOT_W  = 156;
+const SHADE_TOP_Y   = 135,  SHADE_TOP_W  = 130;
+const SHADE_BOT_Y   = 290,  SHADE_BOT_W  = 180;
 const POLE_TOP_Y    = 278,  POLE_BOT_Y   = 430, POLE_W = 18;
 const BASE_CX       = CX,   BASE_Y       = 430;
 const BASE_RX       = 60,   BASE_RY      = 14;
@@ -136,7 +136,7 @@ function drawLightCone() {
   const tx = CX + shadeWobble; // top-center of shade (matches drawShade tx)
   const topY = SHADE_BOT_Y;
   const botY = H + 40;
-  const spread = 110;
+  const spread = 70;
   // bottom shift to exaggerate the angle proportionally
   const bottomShift = shadeWobble * 1.8;
 
@@ -172,11 +172,15 @@ function drawLightCone() {
 
 function drawBase() {
   // rim cylinder
+  const rimLeft = isOn ? '#4d4d4d' : '#2a2a2a';
+  const rimMid1 = isOn ? '#9e9e9e' : '#5a5a5a';
+  const rimMid2 = isOn ? '#7a7a7a' : '#3d3d3d';
+  const rimRight = isOn ? '#3f3f3f' : '#1e1e1e';
   const rimGrad = ctx.createLinearGradient(CX - BASE_RX, 0, CX + BASE_RX, 0);
-  rimGrad.addColorStop(0,   '#2a2a2a');
-  rimGrad.addColorStop(0.3, '#5a5a5a');
-  rimGrad.addColorStop(0.7, '#3d3d3d');
-  rimGrad.addColorStop(1,   '#1e1e1e');
+  rimGrad.addColorStop(0,   rimLeft);
+  rimGrad.addColorStop(0.3, rimMid1);
+  rimGrad.addColorStop(0.7, rimMid2);
+  rimGrad.addColorStop(1,   rimRight);
 
   ctx.save();
   ctx.beginPath();
@@ -192,20 +196,26 @@ function drawBase() {
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(BASE_CX, BASE_Y, BASE_RX, BASE_RY, 0, 0, Math.PI*2);
+  const topInner = isOn ? '#e0e0e0' : '#888';
+  const topOuter = isOn ? '#6a6a6a' : '#2a2a2a';
   const topGrad = ctx.createRadialGradient(CX-10, BASE_Y-4, 2, CX, BASE_Y, BASE_RX);
-  topGrad.addColorStop(0, '#888');
-  topGrad.addColorStop(1, '#2a2a2a');
+  topGrad.addColorStop(0, topInner);
+  topGrad.addColorStop(1, topOuter);
   ctx.fillStyle = topGrad;
   ctx.fill();
   ctx.restore();
 }
 
 function drawPole() {
+  const poleLeft = isOn ? '#3a3a3a' : '#1c1c1c';
+  const poleMid1 = isOn ? '#8f8f8f' : '#4a4a4a';
+  const poleMid2 = isOn ? '#707070' : '#3a3a3a';
+  const poleRight = isOn ? '#3d3d3d' : '#161616';
   const poleGrad = ctx.createLinearGradient(CX - POLE_W/2, 0, CX + POLE_W/2, 0);
-  poleGrad.addColorStop(0,   '#1c1c1c');
-  poleGrad.addColorStop(0.35,'#4a4a4a');
-  poleGrad.addColorStop(0.65,'#3a3a3a');
-  poleGrad.addColorStop(1,   '#161616');
+  poleGrad.addColorStop(0,   poleLeft);
+  poleGrad.addColorStop(0.35,poleMid1);
+  poleGrad.addColorStop(0.65,poleMid2);
+  poleGrad.addColorStop(1,   poleRight);
 
   ctx.save();
   ctx.beginPath();
@@ -218,6 +228,17 @@ function drawPole() {
   ctx.rect(CX - POLE_W/2 + 4, POLE_TOP_Y, 3, POLE_BOT_Y - POLE_TOP_Y);
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
   ctx.fill();
+  
+  // rounded bottom cap for the pole
+  const capRx = POLE_W / 2;
+  const capRy = POLE_W * 0.2;
+  ctx.beginPath();
+  ctx.ellipse(CX, POLE_BOT_Y, capRx, capRy, 0, 0, Math.PI * 2);
+  ctx.fillStyle = poleGrad;
+  ctx.fill();
+  // subtle rim stroke to define edge
+  ctx.beginPath();
+
   ctx.restore();
 }
 
@@ -274,17 +295,15 @@ function drawShade(t) {
     ctx.fill();
   }
 
-  // top rim ellipse
+  // top rim ellipse (match main shade colors)
   ctx.beginPath();
   ctx.ellipse(tx, tly, SHADE_TOP_W/2, 9, 0, 0, Math.PI*2);
   const topRimGrad = ctx.createRadialGradient(tx-8, tly-3, 1, tx, tly, SHADE_TOP_W/2);
-  topRimGrad.addColorStop(0, isOn ? `hsl(${hue},50%,80%)` : '#555');
-  topRimGrad.addColorStop(1, isOn ? `hsl(${hue},55%,40%)` : '#222');
+  topRimGrad.addColorStop(0, shadeColor);
+  topRimGrad.addColorStop(1, shadeDarkColor);
   ctx.fillStyle = topRimGrad;
   ctx.fill();
-  ctx.strokeStyle = isOn ? `hsl(${hue},40%,38%)` : '#1a1a1a';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  
 
   // bottom rim ellipse
   ctx.beginPath();
@@ -294,9 +313,6 @@ function drawShade(t) {
   botRimGrad.addColorStop(1, isOn ? `hsl(${hue},55%,35%)` : '#1a1a1a');
   ctx.fillStyle = botRimGrad;
   ctx.fill();
-  ctx.strokeStyle = isOn ? `hsl(${hue},40%,35%)` : '#161616';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
 
   ctx.restore();
 }
@@ -305,92 +321,98 @@ function drawFace(t) {
   // face center
   const fx = CX + shadeWobble * 0.6;
   const fy = (SHADE_TOP_Y + SHADE_BOT_Y) / 2 + 8;
-  const eyeSpacing = 22;
-
+  const eyeSpacing = 32;
   ctx.save();
 
-  // eyes
-  const eyeH = 9 * eyeOpenness * blinkState + 1.5;
-  const eyeW = 11;
+  // Eyes: simple arch lines. Over-arch (control point above) when `isOn`, under-arch when off.
+  const eyeY = fy - 4;
+  const eyeW = 16;
+  const archHeight = 8;
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = isOn ? '#000' : 'rgba(0,0,0,0.65)';
 
   // left eye
   ctx.beginPath();
-  if (eyeOpenness < 0.15 || blinkState < 0.15) {
-    // closed = arc line
-    ctx.arc(fx - eyeSpacing, fy - 4, 9, Math.PI, 0);
-    ctx.strokeStyle = isOn ? '#fff' : 'rgba(255,255,255,0.55)';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-  } else {
-    ctx.ellipse(fx - eyeSpacing, fy - 4, eyeW/2, eyeH/2, 0, 0, Math.PI*2);
-    ctx.fillStyle = isOn ? '#fff' : 'rgba(255,255,255,0.6)';
-    ctx.fill();
-    // pupil
-    ctx.beginPath();
-    ctx.ellipse(fx - eyeSpacing + 1, fy - 3, eyeW/2 * 0.5, eyeH/2 * 0.7, 0, 0, Math.PI*2);
-    ctx.fillStyle = isOn ? '#1a3a2a' : '#222';
-    ctx.fill();
-    // shine
-    ctx.beginPath();
-    ctx.ellipse(fx - eyeSpacing - 1, fy - 5, 2, 2, 0, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fill();
-  }
+  ctx.moveTo(fx - eyeSpacing - eyeW/2, eyeY);
+  if (isOn) ctx.quadraticCurveTo(fx - eyeSpacing, eyeY - archHeight, fx - eyeSpacing + eyeW/2, eyeY);
+  else ctx.quadraticCurveTo(fx - eyeSpacing, eyeY + archHeight, fx - eyeSpacing + eyeW/2, eyeY);
+  ctx.stroke();
 
   // right eye
   ctx.beginPath();
-  if (eyeOpenness < 0.15 || blinkState < 0.15) {
-    ctx.arc(fx + eyeSpacing, fy - 4, 9, Math.PI, 0);
-    ctx.strokeStyle = isOn ? '#fff' : 'rgba(255,255,255,0.55)';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-  } else {
-    ctx.ellipse(fx + eyeSpacing, fy - 4, eyeW/2, eyeH/2, 0, 0, Math.PI*2);
-    ctx.fillStyle = isOn ? '#fff' : 'rgba(255,255,255,0.6)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(fx + eyeSpacing + 1, fy - 3, eyeW/2 * 0.5, eyeH/2 * 0.7, 0, 0, Math.PI*2);
-    ctx.fillStyle = isOn ? '#1a3a2a' : '#222';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(fx + eyeSpacing - 1, fy - 5, 2, 2, 0, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fill();
-  }
+  ctx.moveTo(fx + eyeSpacing - eyeW/2, eyeY);
+  if (isOn) ctx.quadraticCurveTo(fx + eyeSpacing, eyeY - archHeight, fx + eyeSpacing + eyeW/2, eyeY);
+  else ctx.quadraticCurveTo(fx + eyeSpacing, eyeY + archHeight, fx + eyeSpacing + eyeW/2, eyeY);
+  ctx.stroke();
 
-  // mouth
-  const mx = fx, my = fy + 14;
-  ctx.beginPath();
-  if (mouthSmile < 0.2) {
-    // sleepy flat line
-    ctx.moveTo(mx - 12, my);
-    ctx.lineTo(mx + 12, my);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  } else {
-    // happy arc smile
-    const smileW = 20 + mouthSmile * 8;
-    const smileD = 8 * mouthSmile;
-    ctx.arc(mx, my - smileD * 0.4, smileW, 0.2, Math.PI - 0.2);
-    ctx.strokeStyle = isOn ? '#fff' : 'rgba(255,255,255,0.6)';
-    ctx.lineWidth = 2.8;
-    ctx.lineCap = 'round';
-    ctx.stroke();
+  // Mouth: only visible when `isOn` — bottom half semicircle with a tongue circle inside
+  if (isOn) {
+    const mx = fx;
+    const my = fy + 10;
+    const mouthR = 18 + mouthSmile * 6;
 
-    // rosy cheeks
-    if (mouthSmile > 0.6) {
-      const alpha = (mouthSmile - 0.6) / 0.4 * 0.35;
-      ctx.beginPath();
-      ctx.ellipse(fx - eyeSpacing + 4, fy + 4, 10, 6, -0.3, 0, Math.PI*2);
-      ctx.fillStyle = `rgba(255,120,120,${alpha})`;
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(fx + eyeSpacing - 4, fy + 4, 10, 6, 0.3, 0, Math.PI*2);
-      ctx.fillStyle = `rgba(255,120,120,${alpha})`;
-      ctx.fill();
-    }
+    /* ── 1. DEFINE MOUTH SHAPE (CLIP REGION) ───────────────────────── */
+    ctx.save();
+
+    ctx.beginPath();
+    ctx.moveTo(mx - mouthR, my);
+
+    // upper semicircle (your mouth bowl)
+    ctx.arc(mx, my, mouthR, 0, Math.PI);
+
+    // close bottom edge
+    ctx.closePath();
+
+    /* use this shape as a mask */
+    ctx.clip();
+
+    /* ── 2. DRAW INSIDE MOUTH ONLY ─────────────────────────────────── */
+
+    // mouth interior (black)
+    ctx.beginPath();
+    ctx.arc(mx, my, mouthR, 0, Math.PI);
+    ctx.closePath();
+    ctx.fillStyle = '#111';
+    ctx.fill();
+
+    /* ── tongue positioned bottom-right inside mouth ─────────────── */
+
+    const tongueR = mouthR * 0.45;
+
+    // bottom-right bias position
+    const tongueX = mx + mouthR * 0.35;
+    const tongueY = my + mouthR * 0.8;
+
+    ctx.beginPath();
+    ctx.ellipse(
+      tongueX,
+      tongueY,
+      tongueR,
+      tongueR * 0.85,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fillStyle = 'rgba(255,100,140,0.95)';
+    ctx.fill();
+
+    // highlight
+    ctx.beginPath();
+    ctx.ellipse(
+      tongueX - tongueR * 0.3,
+      tongueY - tongueR * 0.25,
+      tongueR * 0.18,
+      tongueR * 0.12,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fillStyle = 'rgba(255,180,200,0.9)';
+    ctx.fill();
+
+    /* ── restore so clipping doesn't affect other drawing ─────────── */
+    ctx.restore();
   }
 
   ctx.restore();
