@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lamp Up</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0e14;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: sans-serif;
+  }
+  canvas {
+    display: block;
+    cursor: pointer;
+    touch-action: none;
+  }
+  #hint {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.3);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">pull the chain</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
+
+// ── sizing ──────────────────────────────────────────────────────────
+const W = 420, H = 620;
+canvas.width  = W * devicePixelRatio;
+canvas.height = H * devicePixelRatio;
+canvas.style.width  = W + 'px';
+canvas.style.height = H + 'px';
+ctx.scale(devicePixelRatio, devicePixelRatio);
+
+// ── lamp geometry (all in logical px) ────────────────────────────────
+const CX = W / 2;
+const SHADE_TOP_Y   = 160,  SHADE_TOP_W  = 72;
+const SHADE_BOT_Y   = 290,  SHADE_BOT_W  = 156;
+const POLE_TOP_Y    = 290,  POLE_BOT_Y   = 430, POLE_W = 18;
+const BASE_CX       = CX,   BASE_Y       = 430;
+const BASE_RX       = 60,   BASE_RY      = 14;
+const BASE_RIM_H    = 18;
+
+// chain anchor = center-bottom of shade
+const CHAIN_ANCHOR_X = CX;
+const CHAIN_ANCHOR_Y = SHADE_BOT_Y;
+
+// ── state ─────────────────────────────────────────────────────────────
+let isOn = false;
+let hue  = 25; // orange when on
+
+// chain physics
+const CHAIN_REST_Y = SHADE_BOT_Y + 88; // bead resting y
+const BEAD_R = 7;
+let beadY      = CHAIN_REST_Y;
+let beadVY     = 0;
+let chainPull  = 0;   // 0 = rest, > 0 = how far pulled
+let isPulling  = false;
+let pullStartY = 0;
+let dragging   = false;
+
+// eye / face animation
+let eyeOpenness = 0;   // 0 = closed (off), 1 = open (on)
+let mouthSmile  = 0;   // 0 = flat/sleepy, 1 = big smile
+let blinkTimer  = 0;
+let blinkState  = 1;
+
+// light cone glow
+let glowAlpha = 0;
+
+// shade wobble
+let shadeWobble = 0;
+let shadeWobbleV = 0;
+
+// ── spring physics helper ──────────────────────────────────────────────
+function spring(val, target, vel, k=0.18, damp=0.72) {
+  vel = (vel + (target - val) * k) * damp;
+  val = val + vel;
+  return [val, vel];
+}
+
+// ── color helpers ──────────────────────────────────────────────────────
+function lerpColor(c1, c2, t) {
+  const p = (s) => parseInt(s,16);
+  const r1=p(c1.slice(1,3)),g1=p(c1.slice(3,5)),b1=p(c1.slice(5,7));
+  const r2=p(c2.slice(1,3)),g2=p(c2.slice(3,5)),b2=p(c2.slice(5,7));
+  const r=Math.round(r1+(r2-r1)*t);
+  const g=Math.round(g1+(g2-g1)*t);
+  const b=Math.round(b1+(b2-b1)*t);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ── drawing ────────────────────────────────────────────────────────────
+function drawLightCone() {
+  if (glowAlpha < 0.01) return;
+  const bx = CX - SHADE_BOT_W/2 - 30;
+  const bw = SHADE_BOT_W + 60;
+  const topY = SHADE_BOT_Y;
+  const botY = H + 40;
+  const spread = 110;
+
+  const grad = ctx.createLinearGradient(CX, topY, CX, botY);
+  const h = hue;
+  grad.addColorStop(0,   `hsla(${h},80%,70%,${glowAlpha * 0.55})`);
+  grad.addColorStop(0.5, `hsla(${h},80%,60%,${glowAlpha * 0.22})`);
+  grad.addColorStop(1,   `hsla(${h},80%,55%,0)`);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(CX - SHADE_BOT_W/2, topY);
+  ctx.lineTo(CX + SHADE_BOT_W/2, topY);
+  ctx.lineTo(CX + SHADE_BOT_W/2 + spread, botY);
+  ctx.lineTo(CX - SHADE_BOT_W/2 - spread, botY);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.restore();
+
+  // floor pool
+  const pool = ctx.createRadialGradient(CX, H - 60, 0, CX, H - 60, 130);
+  pool.addColorStop(0,   `hsla(${h},80%,65%,${glowAlpha * 0.28})`);
+  pool.addColorStop(1,   `hsla(${h},80%,55%,0)`);
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(CX, H - 60, 130, 36, 0, 0, Math.PI*2);
+  ctx.fillStyle = pool;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBase() {
+  // rim cylinder
+  const rimGrad = ctx.createLinearGradient(CX - BASE_RX, 0, CX + BASE_RX, 0);
+  rimGrad.addColorStop(0,   '#2a2a2a');
+  rimGrad.addColorStop(0.3, '#5a5a5a');
+  rimGrad.addColorStop(0.7, '#3d3d3d');
+  rimGrad.addColorStop(1,   '#1e1e1e');
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(BASE_CX, BASE_Y, BASE_RX, BASE_RY, 0, Math.PI, 0); // top arc
+  ctx.lineTo(BASE_CX + BASE_RX, BASE_Y + BASE_RIM_H);
+  ctx.ellipse(BASE_CX, BASE_Y + BASE_RIM_H, BASE_RX, BASE_RY, 0, 0, Math.PI);
+  ctx.closePath();
+  ctx.fillStyle = rimGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // top ellipse
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(BASE_CX, BASE_Y, BASE_RX, BASE_RY, 0, 0, Math.PI*2);
+  const topGrad = ctx.createRadialGradient(CX-10, BASE_Y-4, 2, CX, BASE_Y, BASE_RX);
+  topGrad.addColorStop(0, '#888');
+  topGrad.addColorStop(1, '#2a2a2a');
+  ctx.fillStyle = topGrad;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPole() {
+  const poleGrad = ctx.createLinearGradient(CX - POLE_W/2, 0, CX + POLE_W/2, 0);
+  poleGrad.addColorStop(0,   '#1c1c1c');
+  poleGrad.addColorStop(0.35,'#4a4a4a');
+  poleGrad.addColorStop(0.65,'#3a3a3a');
+  poleGrad.addColorStop(1,   '#161616');
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(CX - POLE_W/2, POLE_TOP_Y, POLE_W, POLE_BOT_Y - POLE_TOP_Y);
+  ctx.fillStyle = poleGrad;
+  ctx.fill();
+
+  // highlight strip
+  ctx.beginPath();
+  ctx.rect(CX - POLE_W/2 + 4, POLE_TOP_Y, 3, POLE_BOT_Y - POLE_TOP_Y);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawShade(t) {
+  // t = 0 off, 1 on (lerped)
+  const wobble = shadeWobble;
+
+  // shade off color: dark brownish-gray
+  // shade on color: bright teal/green
+  const shadeColor = isOn
+    ? `hsl(${hue}, 60%, ${55 + t*10}%)`
+    : `hsl(30, 8%, ${28 + t*6}%)`;
+
+  const shadeDarkColor = isOn
+    ? `hsl(${hue}, 65%, ${35 + t*8}%)`
+    : `hsl(30, 6%, 18%)`;
+
+  // trapezoid points (with wobble tilt)
+  const tx = CX + wobble;
+  const tlx = tx - SHADE_TOP_W/2,  tly = SHADE_TOP_Y;
+  const trx = tx + SHADE_TOP_W/2,  try_ = SHADE_TOP_Y;
+  const brx = CX + SHADE_BOT_W/2,  bry = SHADE_BOT_Y;
+  const blx = CX - SHADE_BOT_W/2,  bly = SHADE_BOT_Y;
+
+  ctx.save();
+
+  // main shade body gradient (left=darker, right=lighter)
+  const sideGrad = ctx.createLinearGradient(blx, 0, brx, 0);
+  sideGrad.addColorStop(0,    shadeDarkColor);
+  sideGrad.addColorStop(0.25, shadeColor);
+  sideGrad.addColorStop(0.55, shadeColor);
+  sideGrad.addColorStop(0.75, `hsl(${isOn?hue:30}, ${isOn?55:5}%, ${isOn?48:22}%)`);
+  sideGrad.addColorStop(1,    shadeDarkColor);
+
+  ctx.beginPath();
+  ctx.moveTo(tlx, tly);
+  ctx.lineTo(trx, try_);
+  ctx.lineTo(brx, bry);
+  ctx.lineTo(blx, bly);
+  ctx.closePath();
+  ctx.fillStyle = sideGrad;
+  ctx.fill();
+
+  // inner glow when on
+  if (glowAlpha > 0.01) {
+    const innerGlow = ctx.createLinearGradient(CX, tly, CX, bry);
+    innerGlow.addColorStop(0, `hsla(${hue},90%,85%,${glowAlpha*0.35})`);
+    innerGlow.addColorStop(1, `hsla(${hue},90%,75%,${glowAlpha*0.55})`);
+    ctx.beginPath();
+    ctx.moveTo(tlx, tly); ctx.lineTo(trx, try_);
+    ctx.lineTo(brx, bry); ctx.lineTo(blx, bly);
+    ctx.closePath();
+    ctx.fillStyle = innerGlow;
+    ctx.fill();
+  }
+
+  // top rim ellipse
+  ctx.beginPath();
+  ctx.ellipse(tx, tly, SHADE_TOP_W/2, 9, 0, 0, Math.PI*2);
+  const topRimGrad = ctx.createRadialGradient(tx-8, tly-3, 1, tx, tly, SHADE_TOP_W/2);
+  topRimGrad.addColorStop(0, isOn ? `hsl(${hue},50%,80%)` : '#555');
+  topRimGrad.addColorStop(1, isOn ? `hsl(${hue},55%,40%)` : '#222');
+  ctx.fillStyle = topRimGrad;
+  ctx.fill();
+  ctx.strokeStyle = isOn ? `hsl(${hue},40%,38%)` : '#1a1a1a';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // bottom rim ellipse
+  ctx.beginPath();
+  ctx.ellipse(CX, bry, SHADE_BOT_W/2, 13, 0, 0, Math.PI*2);
+  const botRimGrad = ctx.createRadialGradient(CX-12, bry-4, 2, CX, bry, SHADE_BOT_W/2);
+  botRimGrad.addColorStop(0, isOn ? `hsl(${hue},50%,75%)` : '#4a4a4a');
+  botRimGrad.addColorStop(1, isOn ? `hsl(${hue},55%,35%)` : '#1a1a1a');
+  ctx.fillStyle = botRimGrad;
+  ctx.fill();
+  ctx.strokeStyle = isOn ? `hsl(${hue},40%,35%)` : '#161616';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawFace(t) {
+  // face center
+  const fx = CX + shadeWobble * 0.6;
+  const fy = (SHADE_TOP_Y + SHADE_BOT_Y) / 2 + 8;
+  const eyeSpacing = 22;
+
+  ctx.save();
+
+  // eyes
+  const eyeH = 9 * eyeOpenness * blinkState + 1.5;
+  const eyeW = 11;
+
+  // left eye
+  ctx.beginPath();
+  if (eyeOpenness < 0.15 || blinkState < 0.15) {
+    // closed = arc line
+    ctx.arc(fx - eyeSpacing, fy - 4, 9, Math.PI, 0);
+    ctx.strokeStyle = isOn ? '#fff' : 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  } else {
+    ctx.ellipse(fx - eyeSpacing, fy - 4, eyeW/2, eyeH/2, 0, 0, Math.PI*2);
+    ctx.fillStyle = isOn ? '#fff' : 'rgba(255,255,255,0.6)';
+    ctx.fill();
+    // pupil
+    ctx.beginPath();
+    ctx.ellipse(fx - eyeSpacing + 1, fy - 3, eyeW/2 * 0.5, eyeH/2 * 0.7, 0, 0, Math.PI*2);
+    ctx.fillStyle = isOn ? '#1a3a2a' : '#222';
+    ctx.fill();
+    // shine
+    ctx.beginPath();
+    ctx.ellipse(fx - eyeSpacing - 1, fy - 5, 2, 2, 0, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+  }
+
+  // right eye
+  ctx.beginPath();
+  if (eyeOpenness < 0.15 || blinkState < 0.15) {
+    ctx.arc(fx + eyeSpacing, fy - 4, 9, Math.PI, 0);
+    ctx.strokeStyle = isOn ? '#fff' : 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  } else {
+    ctx.ellipse(fx + eyeSpacing, fy - 4, eyeW/2, eyeH/2, 0, 0, Math.PI*2);
+    ctx.fillStyle = isOn ? '#fff' : 'rgba(255,255,255,0.6)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(fx + eyeSpacing + 1, fy - 3, eyeW/2 * 0.5, eyeH/2 * 0.7, 0, 0, Math.PI*2);
+    ctx.fillStyle = isOn ? '#1a3a2a' : '#222';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(fx + eyeSpacing - 1, fy - 5, 2, 2, 0, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+  }
+
+  // mouth
+  const mx = fx, my = fy + 14;
+  ctx.beginPath();
+  if (mouthSmile < 0.2) {
+    // sleepy flat line
+    ctx.moveTo(mx - 12, my);
+    ctx.lineTo(mx + 12, my);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  } else {
+    // happy arc smile
+    const smileW = 20 + mouthSmile * 8;
+    const smileD = 8 * mouthSmile;
+    ctx.arc(mx, my - smileD * 0.4, smileW, 0.2, Math.PI - 0.2);
+    ctx.strokeStyle = isOn ? '#fff' : 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2.8;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // rosy cheeks
+    if (mouthSmile > 0.6) {
+      const alpha = (mouthSmile - 0.6) / 0.4 * 0.35;
+      ctx.beginPath();
+      ctx.ellipse(fx - eyeSpacing + 4, fy + 4, 10, 6, -0.3, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,120,120,${alpha})`;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(fx + eyeSpacing - 4, fy + 4, 10, 6, 0.3, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,120,120,${alpha})`;
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawChain() {
+  const ax = CHAIN_ANCHOR_X;
+  const ay = CHAIN_ANCHOR_Y;
+  const bx = ax;           // bead x
+  const by = beadY;
+
+  // chain string — segmented for catenary feel
+  const segs = 12;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(200,190,170,0.85)';
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  // slight sag curve
+  const midX = ax + (bx-ax)*0.5;
+  const midY = ay + (by-ay)*0.5 + Math.abs(shadeWobble)*0.3;
+  ctx.quadraticCurveTo(midX + shadeWobble*0.15, midY, bx, by - BEAD_R);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // bead
+  ctx.save();
+  const beadGrad = ctx.createRadialGradient(bx-2, by-3, 1, bx, by, BEAD_R);
+  beadGrad.addColorStop(0, '#ddd');
+  beadGrad.addColorStop(0.5,'#aaa');
+  beadGrad.addColorStop(1, '#555');
+  ctx.beginPath();
+  ctx.arc(bx, by, BEAD_R, 0, Math.PI*2);
+  ctx.fillStyle = beadGrad;
+  ctx.fill();
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // highlight
+  ctx.beginPath();
+  ctx.arc(bx - 2, by - 2, 2.2, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── ambient background glow ────────────────────────────────────────────
+function drawBackground() {
+  ctx.clearRect(0, 0, W, H);
+  // base dark
+  ctx.fillStyle = '#0a0e14';
+  ctx.fillRect(0, 0, W, H);
+
+  if (glowAlpha > 0.01) {
+    const amb = ctx.createRadialGradient(CX, H*0.5, 20, CX, H*0.5, 280);
+    amb.addColorStop(0,   `hsla(${hue},50%,25%,${glowAlpha*0.18})`);
+    amb.addColorStop(1,   `hsla(${hue},40%,15%,0)`);
+    ctx.fillStyle = amb;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ── toggle ──────────────────────────────────────────────────────────────
+function toggle() {
+  isOn = !isOn;
+  // randomize hue slightly
+  // set to orange
+  hue = 30;
+  // shade wobble kick
+  shadeWobbleV += (Math.random() - 0.5) * 12;
+}
+
+// ── pointer handling ───────────────────────────────────────────────────
+function getY(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (e.touches) return (e.touches[0].clientY - rect.top);
+  return e.clientY - rect.top;
+}
+function getX(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (e.touches) return (e.touches[0].clientX - rect.left);
+  return e.clientX - rect.left;
+}
+function isNearBead(x, y) {
+  return Math.hypot(x - CHAIN_ANCHOR_X, y - beadY) < 26;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  const x = getX(e), y = getY(e);
+  if (isNearBead(x, y)) {
+    dragging = true;
+    pullStartY = y;
+    canvas.setPointerCapture(e.pointerId);
+    hint.style.opacity = '0';
+  }
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const y = getY(e);
+  const pull = Math.max(0, y - pullStartY);
+  beadY = CHAIN_REST_Y + Math.min(pull, 90);
+  chainPull = pull;
+});
+
+canvas.addEventListener('pointerup', (e) => {
+  if (!dragging) return;
+  dragging = false;
+  if (chainPull > 18) {
+    toggle();
+  }
+  // spring bead back up then bounce
+  beadVY = -Math.min(chainPull * 0.55, 18);
+  chainPull = 0;
+});
+
+canvas.addEventListener('pointercancel', () => { dragging = false; chainPull = 0; });
+
+// ── main loop ──────────────────────────────────────────────────────────
+let lastT = 0;
+function loop(ts) {
+  const dt = Math.min((ts - lastT) / 16.67, 3);
+  lastT = ts;
+
+  // bead spring physics
+  if (!dragging) {
+    beadVY += (CHAIN_REST_Y - beadY) * 0.14;
+    beadVY *= 0.72;
+    beadY += beadVY * dt;
+  }
+
+  // shade wobble
+  shadeWobble += shadeWobbleV * dt;
+  shadeWobbleV += -shadeWobble * 0.12;
+  shadeWobbleV *= 0.78;
+  if (Math.abs(shadeWobble) < 0.05) shadeWobble = 0;
+
+  // eye / mouth / glow animation
+  const targetEye   = isOn ? 1 : 0;
+  const targetMouth = isOn ? 1 : 0;
+  const targetGlow  = isOn ? 1 : 0;
+  [eyeOpenness]  = spring(eyeOpenness, targetEye,   0,  0.09, 0.78);
+  [mouthSmile]   = spring(mouthSmile,  targetMouth, 0,  0.09, 0.78);
+  [glowAlpha]    = spring(glowAlpha,   targetGlow,  0,  0.07, 0.82);
+
+  // blink when on
+  blinkTimer++;
+  if (blinkTimer > 200 + Math.random()*120 && isOn) {
+    blinkTimer = 0;
+    blinkState = 0;
+  }
+  if (blinkState < 0.5) {
+    blinkState += 0.18;
+  } else {
+    blinkState = Math.min(blinkState + 0.22, 1);
+  }
+
+  // ── draw ──────────────────────────────────────────────────────────
+  const t = glowAlpha;
+
+  drawBackground();
+  drawLightCone();
+  drawBase();
+  drawPole();
+  drawShade(t);
+  drawFace(t);
+  drawChain();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
