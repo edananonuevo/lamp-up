@@ -31,16 +31,125 @@
     pointer-events: none;
     transition: opacity 0.5s;
   }
+  /* intro modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0; /* top:0; right:0; bottom:0; left:0; */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px; /* keep some space on small screens */
+    z-index: 9999;
+    pointer-events: auto;
+  }
+
+  .modal-box {
+    max-width: 320px;
+    width: 100%;
+    display: inline-block;
+    margin: 0 auto;
+  }
+
+  .cute-modal {
+  text-align: center;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: radial-gradient(
+    circle at top,
+    rgba(255,255,255,0.05),
+    rgba(15,23,32,0.95)
+  );
+  backdrop-filter: blur(10px);
+  border-radius: 18px;
+  padding: 26px 22px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* soft glow blob */
+.cute-modal::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(255,220,120,0.25), transparent 70%);
+  filter: blur(10px);
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: bold;
+  opacity: 0.9;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+  color: #f1f5f9;
+}
+
+.modal-main {
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 10px 0 14px;
+  color: #f1f5f9;
+}
+
+.modal-sub {
+  font-size: 12px;
+  opacity: 0.6;
+  color: #f1f5f9;
+  margin-bottom: 18px;
+}
+
+.modal-actions button {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.modal-actions button:hover {
+  background: rgba(255,255,255,0.14);
+  transform: translateY(-1px);
+}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hint">pull the chain</div>
 
+<!-- Intro modal -->
+<div id="introModal" class="modal-overlay">
+  <div class="modal-box cute-modal">
+
+    <div class="modal-title">A cheerful lamp for you</div>
+
+    <p class="modal-main">
+      the lamp is sleeping...
+      <br/>
+      pull the chain to wake it up ✨
+    </p>
+
+    <p class="modal-sub">
+      p.s. turn your volume up 🔊
+    </p>
+
+    <div class="modal-actions">
+      <button id="modalNext">wake it up</button>
+    </div>
+
+  </div>
+</div>
+
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const hint = document.getElementById('hint');
+// hide hint until intro dismissed
+hint.style.opacity = '0';
 
 const lampAudios = [
   new Audio('sounds/love you.mp3'),
@@ -905,7 +1014,15 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
-requestAnimationFrame(loop);
+// Intro modal: wire Next button to dismiss and start animation
+const introModal = document.getElementById('introModal');
+const modalNext = document.getElementById('modalNext');
+modalNext.addEventListener('click', async () => {
+  introModal.style.display = 'none';
+  hint.style.opacity = '1';
+  try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch(e){}
+  requestAnimationFrame(loop);
+});
 </script>
 </body>
 </html>
