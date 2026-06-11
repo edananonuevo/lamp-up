@@ -43,11 +43,23 @@ const ctx = canvas.getContext('2d');
 const hint = document.getElementById('hint');
 
 const lampAudios = [
-  new Audio('sounds/love.mp3'),
-  new Audio('sounds/hwaiting.mp3')
+  new Audio('sounds/love you.mp3'),
+  new Audio('sounds/hwaiting.mp3'),
+  new Audio('sounds/believe.mp3'),
+  new Audio('sounds/work hard.mp3')
 ];
 
 let shuffledQueue = [];
+// face identifiers
+const FACE_DEFAULT = 0;
+const FACE_GENTLE  = 1;
+const FACE_KISSY   = 2;
+const FACE_HAPPY   = 3;
+
+const faces = [FACE_DEFAULT, FACE_GENTLE, FACE_KISSY, FACE_HAPPY];
+
+let currentFace = FACE_DEFAULT;
+let faceQueue = [];
 
 // ── sizing ──────────────────────────────────────────────────────────
 const W = 420, H = 620;
@@ -324,70 +336,130 @@ function drawShade(t) {
   ctx.restore();
 }
 
+function nextFace() {
+  // refill + reshuffle when empty
+  if (faceQueue.length === 0) {
+    faceQueue = shuffle([...faces]);
+  }
+
+  // take next face
+  currentFace = faceQueue.pop();
+}
+
 function drawFace(t) {
-  // face center
+
   const fx = CX + shadeWobble * 0.6;
   const fy = (SHADE_TOP_Y + SHADE_BOT_Y) / 2 + 8;
-  const eyeSpacing = 32;
+
+  // =====================================================
+  // OFF STATE
+  // =====================================================
+
+  if (!isOn) {
+
+    const eyeSpacing = 32;
+    const eyeY = fy - 4;
+    const eyeW = 16;
+    const archHeight = 8;
+
+    ctx.save();
+
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+
+    // left eye
+    ctx.beginPath();
+    ctx.moveTo(fx - eyeSpacing - eyeW/2, eyeY);
+
+    ctx.quadraticCurveTo(
+      fx - eyeSpacing,
+      eyeY + archHeight,
+      fx - eyeSpacing + eyeW/2,
+      eyeY
+    );
+
+    ctx.stroke();
+
+    // right eye
+    ctx.beginPath();
+    ctx.moveTo(fx + eyeSpacing - eyeW/2, eyeY);
+
+    ctx.quadraticCurveTo(
+      fx + eyeSpacing,
+      eyeY + archHeight,
+      fx + eyeSpacing + eyeW/2,
+      eyeY
+    );
+
+    ctx.stroke();
+
+    ctx.restore();
+
+    return;
+  }
+
   ctx.save();
 
-  // Eyes: simple arch lines. Over-arch (control point above) when `isOn`, under-arch when off.
+  const eyeSpacing = 32;
   const eyeY = fy - 4;
-  const eyeW = 16;
-  const archHeight = 8;
+
   ctx.lineWidth = 2.6;
   ctx.lineCap = 'round';
-  ctx.strokeStyle = isOn ? '#000' : 'rgba(0,0,0,0.65)';
+  ctx.strokeStyle = '#000';
 
-  // left eye
-  ctx.beginPath();
-  ctx.moveTo(fx - eyeSpacing - eyeW/2, eyeY);
-  if (isOn) ctx.quadraticCurveTo(fx - eyeSpacing, eyeY - archHeight, fx - eyeSpacing + eyeW/2, eyeY);
-  else ctx.quadraticCurveTo(fx - eyeSpacing, eyeY + archHeight, fx - eyeSpacing + eyeW/2, eyeY);
-  ctx.stroke();
+  // =====================================================
+  // DEFAULT FACE 😛
+  // =====================================================
 
-  // right eye
-  ctx.beginPath();
-  ctx.moveTo(fx + eyeSpacing - eyeW/2, eyeY);
-  if (isOn) ctx.quadraticCurveTo(fx + eyeSpacing, eyeY - archHeight, fx + eyeSpacing + eyeW/2, eyeY);
-  else ctx.quadraticCurveTo(fx + eyeSpacing, eyeY + archHeight, fx + eyeSpacing + eyeW/2, eyeY);
-  ctx.stroke();
+  if (currentFace === FACE_DEFAULT) {
 
-  // Mouth: only visible when `isOn` — bottom half semicircle with a tongue circle inside
-  if (isOn) {
+    const eyeW = 16;
+    const archHeight = 8;
+
+    // left eye
+    ctx.beginPath();
+    ctx.moveTo(fx - eyeSpacing - eyeW/2, eyeY);
+    ctx.quadraticCurveTo(
+      fx - eyeSpacing,
+      eyeY - archHeight,
+      fx - eyeSpacing + eyeW/2,
+      eyeY
+    );
+    ctx.stroke();
+
+    // right eye
+    ctx.beginPath();
+    ctx.moveTo(fx + eyeSpacing - eyeW/2, eyeY);
+    ctx.quadraticCurveTo(
+      fx + eyeSpacing,
+      eyeY - archHeight,
+      fx + eyeSpacing + eyeW/2,
+      eyeY
+    );
+    ctx.stroke();
+
+    // tongue mouth
     const mx = fx;
     const my = fy + 10;
     const mouthR = 18 + mouthSmile * 6;
 
-    /* ── 1. DEFINE MOUTH SHAPE (CLIP REGION) ───────────────────────── */
     ctx.save();
 
     ctx.beginPath();
     ctx.moveTo(mx - mouthR, my);
-
-    // upper semicircle (your mouth bowl)
     ctx.arc(mx, my, mouthR, 0, Math.PI);
-
-    // close bottom edge
     ctx.closePath();
-
-    /* use this shape as a mask */
     ctx.clip();
 
-    /* ── 2. DRAW INSIDE MOUTH ONLY ─────────────────────────────────── */
-
-    // mouth interior (black)
     ctx.beginPath();
     ctx.arc(mx, my, mouthR, 0, Math.PI);
     ctx.closePath();
     ctx.fillStyle = '#111';
     ctx.fill();
 
-    /* ── tongue positioned bottom-right inside mouth ─────────────── */
-
     const tongueR = mouthR * 0.45;
 
-    // bottom-right bias position
     const tongueX = mx + mouthR * 0.35;
     const tongueY = my + mouthR * 0.8;
 
@@ -404,22 +476,201 @@ function drawFace(t) {
     ctx.fillStyle = 'rgba(255,100,140,0.95)';
     ctx.fill();
 
-    // highlight
+    ctx.restore();
+  }
+
+  // =====================================================
+  // GENTLE FACE 😌
+  // =====================================================
+
+  else if (currentFace === FACE_GENTLE) {
+
+    const eyeSpacing = 32;
+    const eyeY = fy - 4;
+
+    ctx.save();
+
+    // ── BIG HEART EYES ─────────────────────────────
+    function drawHeart(x, y, size) {
+      ctx.beginPath();
+      const s = size;
+
+      ctx.moveTo(x, y);
+      ctx.bezierCurveTo(x - s, y - s,
+                        x - s * 1.5, y + s * 0.3,
+                        x, y + s);
+
+      ctx.bezierCurveTo(x + s * 1.5, y + s * 0.3,
+                        x + s, y - s,
+                        x, y);
+
+      ctx.fill();
+    }
+
+    ctx.fillStyle = 'rgba(255,100,140,0.95)';
+
+    drawHeart(fx - eyeSpacing, eyeY, 12);  // bigger than normal
+    drawHeart(fx + eyeSpacing, eyeY, 12);
+
+    // ── OPEN MOUTH (no blush) ──────────────────────
+    const mx = fx;
+    const my = fy + 18;
+
+    const mouthR = (18 + mouthSmile * 6) * 2;
+
+    ctx.beginPath();
+
+    // bottom half ellipse (smile/gasp shape)
+    ctx.ellipse(
+      mx,
+      my,
+      mouthR / 2,
+      mouthR / 2,
+      0,
+      0,
+      Math.PI
+    );
+
+    // optional: close bottom so it looks like a filled mouth cavity
+    ctx.lineTo(mx + mouthR / 2, my);
+    ctx.lineTo(mx - mouthR / 2, my);
+    ctx.closePath();
+
+    ctx.fillStyle = '#111';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // =====================================================
+  // KISSY FACE 😘
+  // =====================================================
+
+  else if (currentFace === FACE_KISSY) {
+
+    const eyeW = 18;
+
+    // left eye closed
+    ctx.beginPath();
+    ctx.moveTo(fx - eyeSpacing - eyeW/2, eyeY);
+    ctx.quadraticCurveTo(
+      fx - eyeSpacing,
+      eyeY - 7,
+      fx - eyeSpacing + eyeW/2,
+      eyeY
+    );
+    ctx.stroke();
+
+    // wink
+    ctx.beginPath();
+    ctx.moveTo(fx + eyeSpacing - 6, eyeY);
+    ctx.lineTo(fx + eyeSpacing + 6, eyeY);
+    ctx.stroke();
+
+    // kiss mouth
+    const mx = fx;
+    const my = fy + 20;
+
+    ctx.beginPath();
+    ctx.arc(mx, my, 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // cheek blush
+    ctx.fillStyle = 'rgba(255,120,140,0.35)';
+
     ctx.beginPath();
     ctx.ellipse(
-      tongueX - tongueR * 0.3,
-      tongueY - tongueR * 0.25,
-      tongueR * 0.18,
-      tongueR * 0.12,
+      fx - 18,
+      fy + 10,
+      10,
+      5,
       0,
       0,
       Math.PI * 2
     );
-    ctx.fillStyle = 'rgba(255,180,200,0.9)';
     ctx.fill();
 
-    /* ── restore so clipping doesn't affect other drawing ─────────── */
-    ctx.restore();
+    ctx.beginPath();
+    ctx.ellipse(
+      fx + 18,
+      fy + 10,
+      10,
+      5,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+
+  // =====================================================
+  // HAPPY FACE 😊
+  // =====================================================
+
+  else if (currentFace === FACE_HAPPY) {
+
+    const eyeW = 16;
+
+    // smiling eyes
+    ctx.beginPath();
+    ctx.moveTo(fx - eyeSpacing - eyeW/2, eyeY);
+    ctx.quadraticCurveTo(
+      fx - eyeSpacing,
+      eyeY - 10,
+      fx - eyeSpacing + eyeW/2,
+      eyeY
+    );
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(fx + eyeSpacing - eyeW/2, eyeY);
+    ctx.quadraticCurveTo(
+      fx + eyeSpacing,
+      eyeY - 10,
+      fx + eyeSpacing + eyeW/2,
+      eyeY
+    );
+    ctx.stroke();
+
+    const mx = fx;
+    const my = fy + 18;
+
+    ctx.beginPath();
+    ctx.arc(
+      mx,
+      my,
+      18,
+      0.15,
+      Math.PI - 0.15
+    );
+    ctx.stroke();
+
+    // blush
+    ctx.fillStyle = 'rgba(255,120,120,0.25)';
+
+    ctx.beginPath();
+    ctx.ellipse(
+      fx - 22,
+      fy + 8,
+      9,
+      5,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(
+      fx + 22,
+      fy + 8,
+      9,
+      5,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
   }
 
   ctx.restore();
@@ -522,6 +773,7 @@ function toggle() {
 
   if (isOn) {
     playRandomLampAudio();
+    nextFace();
   }
 }
 
