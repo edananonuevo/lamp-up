@@ -42,6 +42,13 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const hint = document.getElementById('hint');
 
+const lampAudios = [
+  new Audio('sounds/love.mp3'),
+  new Audio('sounds/hwaiting.mp3')
+];
+
+let shuffledQueue = [];
+
 // ── sizing ──────────────────────────────────────────────────────────
 const W = 420, H = 620;
 canvas.width  = W * devicePixelRatio;
@@ -60,7 +67,7 @@ const BASE_RX       = 60,   BASE_RY      = 14;
 const BASE_RIM_H    = 18;
 
 // chain anchor = center-bottom of shade
-const CHAIN_ANCHOR_X = CX-40;
+const CHAIN_ANCHOR_X = CX-50;
 const CHAIN_ANCHOR_Y = SHADE_BOT_Y-10;
 
 // ── state ─────────────────────────────────────────────────────────────
@@ -479,6 +486,31 @@ function drawBackground() {
   }
 }
 
+// ── audio ──────────────────────────────────────────────────────────────
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+
+    [array[i], array[j]] =
+    [array[j], array[i]];
+  }
+
+  return array;
+}
+
+function playRandomLampAudio() {
+  if (shuffledQueue.length === 0) {
+    shuffledQueue = shuffle(
+      [...Array(lampAudios.length).keys()]
+    );
+  }
+
+  const index = shuffledQueue.pop();
+
+  lampAudios[index].currentTime = 0;
+  lampAudios[index].play();
+}
+
 // ── toggle ──────────────────────────────────────────────────────────────
 function toggle() {
   isOn = !isOn;
@@ -487,6 +519,10 @@ function toggle() {
   hue = 30;
   // shade wobble kick
   shadeWobbleV += (Math.random() - 0.5) * 12;
+
+  if (isOn) {
+    playRandomLampAudio();
+  }
 }
 
 // ── pointer handling ───────────────────────────────────────────────────
