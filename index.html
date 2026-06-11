@@ -52,30 +52,25 @@ ctx.scale(devicePixelRatio, devicePixelRatio);
 
 // ── lamp geometry (all in logical px) ────────────────────────────────
 const CX = W / 2;
-const SHADE_TOP_Y   = 160,  SHADE_TOP_W  = 72;
+const SHADE_TOP_Y   = 160,  SHADE_TOP_W  = 106;
 const SHADE_BOT_Y   = 290,  SHADE_BOT_W  = 156;
-const POLE_TOP_Y    = 290,  POLE_BOT_Y   = 430, POLE_W = 18;
+const POLE_TOP_Y    = 278,  POLE_BOT_Y   = 430, POLE_W = 18;
 const BASE_CX       = CX,   BASE_Y       = 430;
 const BASE_RX       = 60,   BASE_RY      = 14;
 const BASE_RIM_H    = 18;
 
 // chain anchor = center-bottom of shade
-const CHAIN_ANCHOR_X = CX;
-const CHAIN_ANCHOR_Y = SHADE_BOT_Y;
+const CHAIN_ANCHOR_X = CX-40;
+const CHAIN_ANCHOR_Y = SHADE_BOT_Y-10;
 
 // ── state ─────────────────────────────────────────────────────────────
 let isOn = false;
 let hue  = 25; // orange when on
 
-// chain physics
-const CHAIN_REST_Y = SHADE_BOT_Y + 88; // bead resting y
-const BEAD_R = 7;
-let beadY      = CHAIN_REST_Y;
-let beadVY     = 0;
-let chainPull  = 0;   // 0 = rest, > 0 = how far pulled
-let isPulling  = false;
+// restored animation / UI state (required after chain physics changes)
+let chainPull = 0;
+let isPulling = false;
 let pullStartY = 0;
-let dragging   = false;
 
 // eye / face animation
 let eyeOpenness = 0;   // 0 = closed (off), 1 = open (on)
@@ -89,6 +84,32 @@ let glowAlpha = 0;
 // shade wobble
 let shadeWobble = 0;
 let shadeWobbleV = 0;
+
+// ── elastic chain physics ────────────────────────────────────────────
+const BEAD_R = 7;
+
+// anchor point (fixed)
+const anchorX = CHAIN_ANCHOR_X;
+const anchorY = CHAIN_ANCHOR_Y;
+
+// rest position (where it wants to return)
+const restX = CHAIN_ANCHOR_X;
+const restY = SHADE_BOT_Y + 88;
+
+// current bead position
+let beadX = restX;
+let beadY = restY;
+
+// velocity
+let beadVX = 0;
+let beadVY = 0;
+
+// interaction
+let dragging = false;
+let maxLength = 120;     // 🔥 max rope stretch
+let pullOffsetX = 0;
+let pullOffsetY = 0;
+let pullStartX = 0;
 
 // ── spring physics helper ──────────────────────────────────────────────
 function spring(val, target, vel, k=0.18, damp=0.72) {
@@ -111,13 +132,15 @@ function lerpColor(c1, c2, t) {
 // ── drawing ────────────────────────────────────────────────────────────
 function drawLightCone() {
   if (glowAlpha < 0.01) return;
-  const bx = CX - SHADE_BOT_W/2 - 30;
-  const bw = SHADE_BOT_W + 60;
+  // align cone to shade horizontal offset (wobble) so it matches shade angle
+  const tx = CX + shadeWobble; // top-center of shade (matches drawShade tx)
   const topY = SHADE_BOT_Y;
   const botY = H + 40;
   const spread = 110;
+  // bottom shift to exaggerate the angle proportionally
+  const bottomShift = shadeWobble * 1.8;
 
-  const grad = ctx.createLinearGradient(CX, topY, CX, botY);
+  const grad = ctx.createLinearGradient(tx + bottomShift*0.2, topY, tx + bottomShift, botY);
   const h = hue;
   grad.addColorStop(0,   `hsla(${h},80%,70%,${glowAlpha * 0.55})`);
   grad.addColorStop(0.5, `hsla(${h},80%,60%,${glowAlpha * 0.22})`);
@@ -125,22 +148,23 @@ function drawLightCone() {
 
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(CX - SHADE_BOT_W/2, topY);
-  ctx.lineTo(CX + SHADE_BOT_W/2, topY);
-  ctx.lineTo(CX + SHADE_BOT_W/2 + spread, botY);
-  ctx.lineTo(CX - SHADE_BOT_W/2 - spread, botY);
+  ctx.moveTo(tx - SHADE_BOT_W/2, topY);
+  ctx.lineTo(tx + SHADE_BOT_W/2, topY);
+  ctx.lineTo(tx + SHADE_BOT_W/2 + spread + bottomShift, botY);
+  ctx.lineTo(tx - SHADE_BOT_W/2 - spread + bottomShift, botY);
   ctx.closePath();
   ctx.fillStyle = grad;
   ctx.fill();
   ctx.restore();
 
   // floor pool
-  const pool = ctx.createRadialGradient(CX, H - 60, 0, CX, H - 60, 130);
+  const poolCx = CX + shadeWobble * 0.8;
+  const pool = ctx.createRadialGradient(poolCx, H - 60, 0, poolCx, H - 60, 130);
   pool.addColorStop(0,   `hsla(${h},80%,65%,${glowAlpha * 0.28})`);
   pool.addColorStop(1,   `hsla(${h},80%,55%,0)`);
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(CX, H - 60, 130, 36, 0, 0, Math.PI*2);
+  ctx.ellipse(poolCx, H - 60, 130, 36, 0, 0, Math.PI*2);
   ctx.fillStyle = pool;
   ctx.fill();
   ctx.restore();
@@ -375,7 +399,7 @@ function drawFace(t) {
 function drawChain() {
   const ax = CHAIN_ANCHOR_X;
   const ay = CHAIN_ANCHOR_Y;
-  const bx = ax;           // bead x
+  const bx = beadX;
   const by = beadY;
 
   // chain string — segmented for catenary feel
@@ -460,8 +484,10 @@ function isNearBead(x, y) {
 
 canvas.addEventListener('pointerdown', (e) => {
   const x = getX(e), y = getY(e);
-  if (isNearBead(x, y)) {
+
+  if (Math.hypot(x - beadX, y - beadY) < 26) {
     dragging = true;
+    pullStartX = x;
     pullStartY = y;
     canvas.setPointerCapture(e.pointerId);
     hint.style.opacity = '0';
@@ -470,21 +496,36 @@ canvas.addEventListener('pointerdown', (e) => {
 
 canvas.addEventListener('pointermove', (e) => {
   if (!dragging) return;
-  const y = getY(e);
-  const pull = Math.max(0, y - pullStartY);
-  beadY = CHAIN_REST_Y + Math.min(pull, 90);
-  chainPull = pull;
+
+  let x = getX(e);
+  let y = getY(e);
+
+  let dx = x - anchorX;
+  let dy = y - anchorY;
+
+  let dist = Math.hypot(dx, dy);
+
+  // 🔥 clamp to max rope length (elastic constraint)
+  if (dist > maxLength) {
+    dx = (dx / dist) * maxLength;
+    dy = (dy / dist) * maxLength;
+    dist = maxLength;
+  }
+
+  // target position (where user is pulling)
+  beadX = anchorX + dx;
+  beadY = anchorY + dy;
 });
 
-canvas.addEventListener('pointerup', (e) => {
+canvas.addEventListener('pointerup', () => {
   if (!dragging) return;
   dragging = false;
-  if (chainPull > 18) {
+
+  let dist = Math.hypot(beadX - anchorX, beadY - anchorY);
+
+  if (dist > 35) {
     toggle();
   }
-  // spring bead back up then bounce
-  beadVY = -Math.min(chainPull * 0.55, 18);
-  chainPull = 0;
 });
 
 canvas.addEventListener('pointercancel', () => { dragging = false; chainPull = 0; });
@@ -495,10 +536,21 @@ function loop(ts) {
   const dt = Math.min((ts - lastT) / 16.67, 3);
   lastT = ts;
 
-  // bead spring physics
+  // ── elastic spring back to rest position ─────────────────────────────
   if (!dragging) {
-    beadVY += (CHAIN_REST_Y - beadY) * 0.14;
-    beadVY *= 0.72;
+
+    // spring force toward rest position
+    const dx = restX - beadX;
+    const dy = restY - beadY;
+
+    beadVX += dx * 0.12;
+    beadVY += dy * 0.12;
+
+    // damping
+    beadVX *= 0.75;
+    beadVY *= 0.75;
+
+    beadX += beadVX * dt;
     beadY += beadVY * dt;
   }
 
@@ -534,8 +586,9 @@ function loop(ts) {
   drawBackground();
   drawLightCone();
   drawBase();
-  drawPole();
+  
   drawShade(t);
+  drawPole();
   drawFace(t);
   drawChain();
 
